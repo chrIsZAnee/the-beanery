@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './Menu.css'
+import { API_URL } from './config'
 
 interface MenuItem {
   id: number
@@ -148,7 +149,7 @@ function Menu() {
     
     try {
       // Send feedback to backend API
-      const response = await fetch('http://localhost:3001/api/feedback', {
+      const response = await fetch(`${API_URL}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating: parseInt(rating), comments })

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Admin.css'
+import { API_URL } from '../config'
 
 function Admin() {
   const navigate = useNavigate()
@@ -15,7 +16,7 @@ function Admin() {
 
   const fetchFeedback = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/feedback')
+      const response = await fetch(`${API_URL}/api/feedback`)
       const data = await response.json()
       if (data.success) {
         setFeedbackList(data.feedback)
@@ -29,7 +30,7 @@ function Admin() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/feedback/stats')
+      const response = await fetch(`${API_URL}/api/feedback/stats`)
       const data = await response.json()
       if (data.success) {
         setStats(data.stats)
