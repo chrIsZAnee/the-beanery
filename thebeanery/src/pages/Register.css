@@ -1,0 +1,78 @@
+.register-container {
+  min-height: 80vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.register-box {
+  background: white;
+  padding: 3rem;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 450px;
+}
+
+.register-box h2 {
+  text-align: center;
+  color: #4a3520;
+  margin-bottom: 2rem;
+  font-size: 2rem;
+}
+
+.register-btn {
+  width: 100%;
+  padding: 1rem;
+  background-color: #4a3520;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s, transform 0.1s;
+}
+
+.register-btn:hover:not(:disabled) {
+  background-color: #6b5030;
+  transform: translateY(-2px);
+}
+
+.register-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.register-btn:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+.login-link {
+  text-align: center;
+  margin-top: 1.5rem;
+  color: #666;
+}
+
+.login-link a {
+  color: #4a3520;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.login-link a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+  .register-box {
+    padding: 2rem 1.5rem;
+  }
+
+  .register-box h2 {
+    font-size: 1.5rem;
+  }
+}
+
