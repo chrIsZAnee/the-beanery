@@ -5,8 +5,8 @@
   # Build command - navigate to thebeanery first
   command = "cd thebeanery && npm install && npm run build"
   
-  # Directory with the build output (absolute from repo root)
-  publish = "thebeanery/dist"
+  # Directory with the build output (relative - Netlify auto-adds thebeanery/)
+  publish = "dist"
 
 # Production environment variables
 [build.environment]
