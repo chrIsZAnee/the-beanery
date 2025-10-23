@@ -1,5 +1,5 @@
 const express = require('express');
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 
@@ -19,101 +19,96 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Database configuration
-// Supports both individual env vars and DATABASE_URL (for Render)
+// PostgreSQL connection using DATABASE_URL (Render) or individual env vars (local)
 function getDatabaseConfig() {
   if (process.env.DATABASE_URL) {
-    // Parse DATABASE_URL format: mysql://user:password@host:port/database
-    const url = new URL(process.env.DATABASE_URL);
+    // Render provides DATABASE_URL for PostgreSQL
     return {
-      host: url.hostname,
-      user: url.username,
-      password: url.password,
-      database: url.pathname.slice(1), // Remove leading /
-      port: url.port || 3306,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
     };
   }
   
-  // Fallback to individual environment variables or defaults (for local/XAMPP)
+  // Fallback to individual environment variables for local development
   return {
     host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'beanery',
-    port: process.env.DB_PORT || 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+    port: process.env.DB_PORT || 5432,
+    max: 10, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000,
   };
 }
 
 const dbConfig = getDatabaseConfig();
 
 // Create database connection pool
-const pool = mysql.createPool(dbConfig);
+const pool = new Pool(dbConfig);
 
 // Initialize database and create feedback table
 async function initializeDatabase() {
   try {
-    const connection = await pool.getConnection();
+    const client = await pool.connect();
     
-    console.log('Connecting to database...');
-    
-    // Check if database exists
-    const [databases] = await connection.query(`SHOW DATABASES LIKE 'beanery'`);
-    
-    if (databases.length === 0) {
-      console.log('Database "beanery" not found!');
-      console.log('Please import the database/beanery.sql file using phpMyAdmin or MySQL command line.');
-      console.log('See database/setup_database.md for instructions.');
-    } else {
-      console.log('Database "beanery" found!');
-    }
-    
-    // Use the beanery database
-    await connection.query(`USE beanery`);
+    console.log('Connecting to PostgreSQL database...');
     
     // Check if feedback table exists
-    const [tables] = await connection.query(`SHOW TABLES LIKE 'feedback'`);
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'feedback'
+      );
+    `);
     
-    if (tables.length === 0) {
+    if (!tableCheck.rows[0].exists) {
       console.log('Table "feedback" not found. Creating table...');
       // Create feedback table if it doesn't exist
       const createTableQuery = `
         CREATE TABLE IF NOT EXISTS feedback (
-          id INT(11) NOT NULL AUTO_INCREMENT,
-          rating INT(11) NOT NULL,
+          id SERIAL PRIMARY KEY,
+          rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
           comments TEXT DEFAULT NULL,
-          PRIMARY KEY (id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC);
       `;
-      await connection.query(createTableQuery);
+      await client.query(createTableQuery);
       console.log('Table "feedback" created successfully!');
     } else {
       // Get count of existing feedback
-      const [countResult] = await connection.query(`SELECT COUNT(*) as count FROM feedback`);
-      const feedbackCount = countResult[0].count;
+      const countResult = await client.query(`SELECT COUNT(*) as count FROM feedback`);
+      const feedbackCount = countResult.rows[0].count;
       console.log(`Table "feedback" found with ${feedbackCount} entries!`);
     }
     
-    connection.release();
+    client.release();
     console.log('Database initialized successfully ✓');
   } catch (error) {
     console.error('Error initializing database:', error.message);
-    console.error('Make sure MySQL is running in XAMPP and the database is imported.');
+    console.error('Make sure PostgreSQL is running and the database is created.');
+    console.error('For Render: Import database/beanery-postgres.sql via dashboard or psql');
   }
 }
 
 // Initialize database on server start
 initializeDatabase();
 
+// Test database connection
+pool.on('connect', () => {
+  console.log('💾 Connected to PostgreSQL database');
+});
+
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+});
+
 // API Routes
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
+  res.json({ status: 'ok', message: 'Server is running', database: 'PostgreSQL' });
 });
 
 // Submit feedback endpoint
@@ -129,14 +124,14 @@ app.post('/api/feedback', async (req, res) => {
       });
     }
     
-    // Insert feedback into database
-    const sql = 'INSERT INTO feedback (rating, comments) VALUES (?, ?)';
-    const [result] = await pool.query(sql, [parseInt(rating), comments || '']);
+    // Insert feedback into database (PostgreSQL uses $1, $2 instead of ?)
+    const sql = 'INSERT INTO feedback (rating, comments) VALUES ($1, $2) RETURNING id';
+    const result = await pool.query(sql, [parseInt(rating), comments || null]);
     
     res.json({
       success: true,
       message: 'Thank you for your feedback!',
-      feedbackId: result.insertId
+      feedbackId: result.rows[0].id
     });
     
   } catch (error) {
@@ -151,12 +146,12 @@ app.post('/api/feedback', async (req, res) => {
 // Get all feedback (optional - for admin purposes)
 app.get('/api/feedback', async (req, res) => {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       'SELECT * FROM feedback ORDER BY created_at DESC'
     );
     res.json({
       success: true,
-      feedback: rows
+      feedback: result.rows
     });
   } catch (error) {
     console.error('Error fetching feedback:', error);
@@ -170,7 +165,7 @@ app.get('/api/feedback', async (req, res) => {
 // Get feedback statistics (optional)
 app.get('/api/feedback/stats', async (req, res) => {
   try {
-    const [stats] = await pool.query(`
+    const result = await pool.query(`
       SELECT 
         COUNT(*) as total_feedback,
         AVG(rating) as average_rating,
@@ -181,7 +176,7 @@ app.get('/api/feedback/stats', async (req, res) => {
     
     res.json({
       success: true,
-      stats: stats[0]
+      stats: result.rows[0]
     });
   } catch (error) {
     console.error('Error fetching stats:', error);
@@ -198,7 +193,12 @@ app.listen(PORT, () => {
   console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 CORS enabled for: ${corsOptions.origin}`);
-  console.log(`💾 Database: ${dbConfig.database} on ${dbConfig.host}`);
+  console.log(`💾 Database: PostgreSQL`);
+  if (process.env.DATABASE_URL) {
+    console.log(`🔌 Using DATABASE_URL connection`);
+  } else {
+    console.log(`🔌 Database: ${dbConfig.database} on ${dbConfig.host}:${dbConfig.port}`);
+  }
 });
 
 // Handle graceful shutdown
@@ -208,3 +208,8 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received. Shutting down server...');
+  await pool.end();
+  process.exit(0);
+});
