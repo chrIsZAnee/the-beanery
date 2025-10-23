@@ -49,49 +49,71 @@ const dbConfig = getDatabaseConfig();
 // Create database connection pool
 const pool = new Pool(dbConfig);
 
-// Initialize database and create feedback table
+// Initialize database and create tables
 async function initializeDatabase() {
   try {
     const client = await pool.connect();
     
     console.log('Connecting to PostgreSQL database...');
     
-    // Check if feedback table exists
-    const tableCheck = await client.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'feedback'
+    // Create users table if it doesn't exist
+    console.log('Checking users table...');
+    const usersTableQuery = `
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        is_admin BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
-    `);
+      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    `;
+    await client.query(usersTableQuery);
+    console.log('✓ Users table ready');
     
-    if (!tableCheck.rows[0].exists) {
-      console.log('Table "feedback" not found. Creating table...');
-      // Create feedback table if it doesn't exist
-      const createTableQuery = `
-        CREATE TABLE IF NOT EXISTS feedback (
-          id SERIAL PRIMARY KEY,
-          rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-          comments TEXT DEFAULT NULL,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC);
-      `;
-      await client.query(createTableQuery);
-      console.log('Table "feedback" created successfully!');
+    // Check if admin user exists, if not create it
+    const adminCheck = await client.query(`SELECT * FROM users WHERE username = 'admin'`);
+    if (adminCheck.rows.length === 0) {
+      console.log('Creating default admin user...');
+      await client.query(
+        `INSERT INTO users (username, email, password_hash, is_admin) VALUES ($1, $2, $3, $4)`,
+        ['admin', 'admin@thebeanery.com', '$2b$10$rN8KqZ8dG9fVJxKx1mO7eO7N6.ZvYxLYDqJ2H5nFc3k1nH.2vL0Hy', true]
+      );
+      console.log('✓ Default admin created (username: admin, password: admin123)');
     } else {
-      // Get count of existing feedback
-      const countResult = await client.query(`SELECT COUNT(*) as count FROM feedback`);
-      const feedbackCount = countResult.rows[0].count;
-      console.log(`Table "feedback" found with ${feedbackCount} entries!`);
+      console.log('✓ Admin user exists');
     }
     
+    // Create feedback table if it doesn't exist
+    console.log('Checking feedback table...');
+    const feedbackTableQuery = `
+      CREATE TABLE IF NOT EXISTS feedback (
+        id SERIAL PRIMARY KEY,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        comments TEXT DEFAULT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC);
+    `;
+    await client.query(feedbackTableQuery);
+    
+    // Get count of existing feedback
+    const countResult = await client.query(`SELECT COUNT(*) as count FROM feedback`);
+    const feedbackCount = countResult.rows[0].count;
+    console.log(`✓ Feedback table ready with ${feedbackCount} entries`);
+    
+    // Get count of users
+    const userCountResult = await client.query(`SELECT COUNT(*) as count FROM users`);
+    const userCount = userCountResult.rows[0].count;
+    console.log(`✓ Total users: ${userCount}`);
+    
     client.release();
-    console.log('Database initialized successfully ✓');
+    console.log('✅ Database initialized successfully!');
   } catch (error) {
-    console.error('Error initializing database:', error.message);
-    console.error('Make sure PostgreSQL is running and the database is created.');
-    console.error('For Render: Import database/beanery-postgres.sql via dashboard or psql');
+    console.error('❌ Error initializing database:', error.message);
+    console.error('Make sure DATABASE_URL environment variable is set correctly.');
   }
 }
 
