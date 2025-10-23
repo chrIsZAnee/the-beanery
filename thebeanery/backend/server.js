@@ -4,21 +4,52 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
+
+// CORS Configuration
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+  optionsSuccessStatus: 200
+};
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Database configuration
-// Make sure you have imported the database/beanery.sql file into your MySQL/MariaDB
-const dbConfig = {
-  host: 'localhost',  // or '127.0.0.1'
-  user: 'root',       // Default XAMPP MySQL user
-  password: '',       // Default XAMPP MySQL password (empty)
-  database: 'beanery' // Must match the database name in beanery.sql
-};
+// Supports both individual env vars and DATABASE_URL (for Render)
+function getDatabaseConfig() {
+  if (process.env.DATABASE_URL) {
+    // Parse DATABASE_URL format: mysql://user:password@host:port/database
+    const url = new URL(process.env.DATABASE_URL);
+    return {
+      host: url.hostname,
+      user: url.username,
+      password: url.password,
+      database: url.pathname.slice(1), // Remove leading /
+      port: url.port || 3306,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    };
+  }
+  
+  // Fallback to individual environment variables or defaults (for local/XAMPP)
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'beanery',
+    port: process.env.DB_PORT || 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  };
+}
+
+const dbConfig = getDatabaseConfig();
 
 // Create database connection pool
 const pool = mysql.createPool(dbConfig);
@@ -163,8 +194,11 @@ app.get('/api/feedback/stats', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  console.log(`API endpoints available at http://localhost:${PORT}/api`);
+  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 CORS enabled for: ${corsOptions.origin}`);
+  console.log(`💾 Database: ${dbConfig.database} on ${dbConfig.host}`);
 });
 
 // Handle graceful shutdown

@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  db:
+    image: mysql:8.0
+    container_name: beanery_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-beanery}
+      MYSQL_USER: ${DB_USER:-beanery_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-beanery_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./backend/database/beanery.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - beanery_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: beanery_backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3001}
+      DB_HOST: db
+      DB_USER: ${DB_USER:-beanery_user}
+      DB_PASSWORD: ${DB_PASSWORD:-beanery_password}
+      DB_NAME: ${DB_NAME:-beanery}
+      DB_PORT: 3306
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - beanery_network
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+volumes:
+  db_data:
+
+networks:
+  beanery_network:
+    driver: bridge
+
