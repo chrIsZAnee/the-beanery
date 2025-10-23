@@ -2,14 +2,11 @@
 # This file is at repository root
 
 [build]
-  # Base directory - where to run build commands
-  base = "thebeanery"
+  # Build command - navigate to thebeanery first
+  command = "cd thebeanery && npm install && npm run build"
   
-  # Build command
-  command = "npm run build"
-  
-  # Directory with the build output (relative to base)
-  publish = "dist"
+  # Directory with the build output (absolute from repo root)
+  publish = "thebeanery/dist"
 
 # Production environment variables
 [build.environment]
